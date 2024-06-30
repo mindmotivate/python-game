@@ -54,4 +54,4 @@ jobs:
           password: ${{ secrets.DOCKERHUB_PASSWORD }}  # Replace with your password
 
       - name: Push Image to Docker Hub (optional)
-        run: docker push myapp:latest  # Push image (requires login)
+        run: docker push motivatedmind336/malgus_docker:latest  # Push image (requires login)
