@@ -1,0 +1,41 @@
+name: Build, Scan, and Push Docker Image
+
+on: [push]  # Trigger this bitch on a push
+
+jobs:
+  build_and_push:
+    runs-on: ubuntu-latest  # Run the workflow on an Ubuntu virtual machine
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3  # Get the code from your repository
+
+      - name: Set up Docker
+        uses: docker/setup-docker@v3  # Install Docker on the runner
+
+      - name: Login to Docker Hub (secrets required)
+        uses: docker/login-action@v2  # Login to Docker Hub
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Build Docker Image
+        run: docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/python-connect-four-game:latest .
+
+      - name: Run Bandit Security Scan
+        run: |
+          pip install bandit  # Install Bandit (if not in requirements.txt)
+          bandit -ll -ii -r . -f json -o bandit-report.json
+
+      - name: Upload Bandit Scan Report
+        uses: actions/upload-artifact@v3
+        if: always()  # Upload this shit regardless of success/failure
+        with:
+          name: bandit-scan-report
+          path: bandit-report.json
+
+      - name: Create Docker Container (Optional)
+        run: docker run -d --name pyhton-game ${{ secrets.DOCKERHUB_USERNAME }}/python-game:latest
+
+      - name: Push Docker Image to Hub
+        run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/python-game:latest
+
