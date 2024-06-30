@@ -1,41 +1,77 @@
-name: Build, Scan, and Push Docker Image
+name: CI
 
-on: [push]  # Trigger this bitch on a push
+# Trigger workflow on push events
+on: [push]
 
 jobs:
-  build_and_push:
-    runs-on: ubuntu-latest  # Run the workflow on an Ubuntu virtual machine
+  # Bandit security scan job
+  bandit_scan:
+    runs-on: ubuntu-latest  # Run on an Ubuntu runner
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3  # Get the code from your repository
+        uses: actions/checkout@v3  # Get code from repository
 
-      - name: Set up Docker
-        uses: docker/setup-docker@v3  # Install Docker on the runner
-
-      - name: Login to Docker Hub (secrets required)
-        uses: docker/login-action@v2  # Login to Docker Hub
+      - name: Set up Python
+        uses: actions/setup-python@v3  # Set up Python environment
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+          python-version: 3.8  # Specify Python version
 
-      - name: Build Docker Image
-        run: docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/python-connect-four-game:latest .
+      - name: Install Bandit
+        run: pip install bandit
 
-      - name: Run Bandit Security Scan
-        run: |
-          pip install bandit  # Install Bandit (if not in requirements.txt)
-          bandit -ll -ii -r . -f json -o bandit-report.json
+      - name: Run Bandit Scan
+        run: bandit -ll -ii -r . -f json -o bandit-report.json
+        # -ll: Show only low, medium, or high severity findings
+        # -ii: Show only low, medium, or high confidence findings
+        # -r: Recursively scan all files
+        # .: Scan current directory
+        # -f json: Output results in JSON format
+        # -o bandit-report.json: Write output to file
 
-      - name: Upload Bandit Scan Report
-        uses: actions/upload-artifact@v3
-        if: always()  # Upload this shit regardless of success/failure
+      - name: Upload Bandit Report
+        uses: actions/upload-artifact@v3  # Upload report as artifact
+        if: always()  # Upload even if previous steps fail
         with:
-          name: bandit-scan-report
+          name: bandit-findings
           path: bandit-report.json
 
-      - name: Create Docker Container (Optional)
-        run: docker run -d --name pyhton-game ${{ secrets.DOCKERHUB_USERNAME }}/python-game:latest
+  # Docker image build and scan job (optional)
+  docker_build_and_scan:
+    runs-on: ubuntu-latest  # Run on an Ubuntu runner
+    needs: bandit_scan  # Only run after bandit_scan finishes
 
-      - name: Push Docker Image to Hub
-        run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/python-game:latest
+    steps:
+      - name: Checkout code (again)
+        uses: actions/checkout@v3  # Get code from repository
+
+      - name: Set up Docker
+        uses: docker-practice/actions-setup-docker@v1  # Install Docker on runner
+        with:
+          docker_version: '20.10.7'  # Specify Docker version (optional)
+
+      - name: Login to Docker Hub (secrets required)  # Consider automated builds
+        uses: docker/login-action@v2  # Login (optional)
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}  # Replace with your username
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}  # Replace with your password
+
+      - name: Build Docker Image
+        run: docker build -f Dockerfile -t myapp:latest .
+
+      - name: Docker Scout Scan
+        uses: docker/scout-action@v1.0.9  # Run Docker Scout scan
+        with:
+          dockerhub-user: ${{ secrets.REPO_USER }}  # Replace with your Docker Hub username
+          dockerhub-password: ${{ secrets.REPO_PWD }}  # Replace with your Docker Hub password
+          command: quickview,cves  # Run both quickview and cves commands
+          only-severities: critical,high  # Filter for critical and high vulnerabilities
+          sarif-file: scout-report.sarif  # Specify output file name
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3  # Upload Docker Scout report
+        if: always()  # Upload even if previous steps fail
+        with:
+          name: docker-scout-findings
+          path: scout-report.sarif
 
